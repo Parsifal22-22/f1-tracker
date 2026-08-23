@@ -1,0 +1,13 @@
+{
+  "name": "F1 賽事追蹤器",
+  "short_name": "F1 Tracker",
+  "description": "2026 F1 賽事時間 + 即時賽道追蹤",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0C0C0E",
+  "theme_color": "#0C0C0E",
+  "orientation": "any",
+  "icons": [
+    { "src": "icon-512.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

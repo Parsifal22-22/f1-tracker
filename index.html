@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="F1 Tracker">
+<meta name="theme-color" content="#0C0C0E">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,500;9..40,700;9..40,800&display=swap">
+<title>F1 Tracker</title>
+<style>
+:root {
+  --bg: #0C0C0E;
+  --surface: #1A1A1F;
+  --surface2: #222228;
+  --border: #2A2A32;
+  --text: #E8E8EC;
+  --text2: #9B9BA3;
+  --text3: #5C5C66;
+  --red: #E10600;
+  --red-dim: rgba(225,6,0,0.15);
+  --red-glow: rgba(225,6,0,0.3);
+  --gold: #FFD700;
+  --silver: #C0C0C0;
+  --bronze: #CD7F32;
+  --font: 'DM Sans', -apple-system, 'Segoe UI', sans-serif;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg)}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;min-height:100dvh;overflow-x:hidden;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+
+.app-header{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:12px 20px;padding-top:max(12px,env(safe-area-inset-top));background:rgba(12,12,14,0.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+.app-logo{display:flex;align-items:center;gap:10px}
+.app-logo-mark{background:var(--red);color:#fff;font-weight:800;font-size:14px;letter-spacing:1px;padding:4px 8px;border-radius:4px}
+.app-logo-text{font-size:13px;color:var(--text2);font-weight:500}
+.header-right{font-size:12px;color:var(--text3)}
+
+.tab-bar{position:fixed;bottom:0;left:0;right:0;z-index:100;display:flex;background:rgba(12,12,14,0.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);padding-bottom:var(--safe-b)}
+.tab-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;cursor:pointer;border:none;background:none;color:var(--text3);font-size:10px;font-family:var(--font);font-weight:500;transition:color .2s}
+.tab-item svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tab-item.active{color:var(--red)}
+.tab-item.active svg{stroke:var(--red)}
+
+.view{display:none;padding:16px 16px calc(70px + var(--safe-b))}
+.view.active{display:block}
+
+.hero{position:relative;background:linear-gradient(145deg,#1C0A0A 0%,var(--surface) 50%,#0A0E1C 100%);border:1px solid var(--border);border-radius:16px;padding:22px 20px;margin-bottom:20px;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-40px;right:-40px;width:140px;height:140px;background:radial-gradient(circle,var(--red-glow) 0%,transparent 70%);pointer-events:none}
+.hero-eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:3px;color:var(--red);font-weight:700;margin-bottom:10px;position:relative}
+.hero-eyebrow.live::before{content:'';display:inline-block;width:6px;height:6px;background:var(--red);border-radius:50%;margin-right:6px;vertical-align:middle;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.hero-title{font-size:24px;font-weight:800;line-height:1.15;margin-bottom:4px;text-wrap:balance}
+.hero-sub{font-size:13px;color:var(--text2);margin-bottom:16px}
+.hero-countdown{font-size:36px;font-weight:800;color:var(--red);line-height:1}
+.hero-countdown small{font-size:12px;color:var(--text3);font-weight:500;margin-right:2px}
+.hero-race-time{font-size:12px;color:var(--text2);margin-top:8px}
+
+.sessions-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:16px}
+.session-chip{background:var(--surface2);border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+.session-chip .label{font-size:11px;color:var(--text3);font-weight:500}
+.session-chip .time{font-size:12px;font-weight:700}
+
+.section-head{font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px}
+.race-list{display:flex;flex-direction:column;gap:6px}
+.race-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;transition:border-color .2s}
+.race-row.past{opacity:.3}
+.race-row.live{border-color:var(--red);box-shadow:0 0 12px var(--red-dim)}
+.race-round{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;background:var(--surface2);color:var(--text2)}
+.race-row.live .race-round,.race-row:not(.past) .race-round{background:var(--red);color:#fff}
+.race-info{flex:1;min-width:0}
+.race-name{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.race-circuit{font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.race-date{text-align:right;flex-shrink:0}
+.race-date .d{font-weight:700;font-size:13px}
+.race-date .t{font-size:11px;color:var(--text3)}
+.live-pill{background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;flex-shrink:0;animation:pulse 1.5s infinite}
+
+.track-wrap{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-bottom:12px}
+.track-top{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)}
+.track-title{font-size:15px;font-weight:700}
+.track-status{font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px}
+.track-status.on{background:var(--red);color:#fff;animation:pulse 1.5s infinite}
+.track-status.off{background:var(--surface2);color:var(--text3)}
+.track-canvas-box{position:relative;width:100%;aspect-ratio:4/3}
+#trackCanvas{width:100%;height:100%;display:block}
+
+.lap-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2)}
+.lap-bar strong{color:var(--red);font-weight:700}
+
+.lb-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.lb-header{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+.lb-header .refresh-dot{width:8px;height:8px;border-radius:50%;background:var(--text3)}
+.lb-header .refresh-dot.live{background:#00C853;animation:pulse 1.5s infinite}
+.lb-row{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid rgba(42,42,50,0.5);font-size:13px}
+.lb-row:last-child{border-bottom:none}
+.lb-pos{width:22px;font-weight:800;font-size:14px;text-align:center;flex-shrink:0}
+.lb-pos.p1{color:var(--gold)}.lb-pos.p2{color:var(--silver)}.lb-pos.p3{color:var(--bronze)}
+.lb-color{width:3px;height:26px;border-radius:2px;flex-shrink:0}
+.lb-info{flex:1;min-width:0}
+.lb-name{font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-team{font-size:10px;color:var(--text3)}
+.lb-gap{font-size:11px;color:var(--text2);text-align:right;min-width:50px}
+
+.standings-toggle{display:flex;gap:0;margin-bottom:14px;background:var(--surface);border-radius:10px;padding:3px;border:1px solid var(--border)}
+.standings-toggle button{flex:1;padding:8px;border:none;background:none;font-family:var(--font);font-size:13px;font-weight:600;color:var(--text3);border-radius:8px;cursor:pointer;transition:all .2s}
+.standings-toggle button.active{background:var(--red);color:#fff}
+.st-row{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:6px}
+.st-pos{width:28px;font-weight:800;font-size:16px;text-align:center;flex-shrink:0}
+.st-pos.p1{color:var(--gold)}.st-pos.p2{color:var(--silver)}.st-pos.p3{color:var(--bronze)}
+.st-color{width:3px;height:30px;border-radius:2px;flex-shrink:0}
+.st-info{flex:1;min-width:0}
+.st-driver{font-weight:700;font-size:14px}
+.st-team{font-size:11px;color:var(--text3);margin-top:1px}
+.st-points{font-weight:800;font-size:16px;color:var(--red);flex-shrink:0}
+.st-points small{font-size:10px;color:var(--text3);font-weight:500}
+
+.setting-row{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:6px}
+.setting-label{font-size:14px;font-weight:600}
+.setting-desc{font-size:11px;color:var(--text3);margin-top:2px}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+@media(min-width:600px){
+  .view{max-width:480px;margin:0 auto}
+  .hero-title{font-size:28px}
+  .sessions-grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+}
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="app-logo">
+    <div class="app-logo-mark">F1</div>
+    <div class="app-logo-text">2026 賽季</div>
+  </div>
+  <div class="header-right">台灣時間</div>
+</div>
+
+<div class="view active" id="v-schedule">
+  <div class="hero" id="heroBanner"></div>
+  <div class="section-head">全部賽事</div>
+  <div class="race-list" id="raceList"></div>
+</div>
+
+<div class="view" id="v-track">
+  <div class="track-wrap">
+    <div class="track-top">
+      <div class="track-title" id="trackTitle">賽道即時</div>
+      <div class="track-status off" id="trackStatus">等待比賽</div>
+    </div>
+    <div class="lap-bar"><span id="lapText">等待中</span><strong id="lapNum"></strong></div>
+    <div class="track-canvas-box"><canvas id="trackCanvas"></canvas></div>
+  </div>
+  <div class="lb-card">
+    <div class="lb-header">
+      <span>即時排行</span>
+      <div class="refresh-dot" id="refreshDot"></div>
+    </div>
+    <div id="leaderboard"></div>
+  </div>
+</div>
+
+<div class="view" id="v-standings">
+  <div class="standings-toggle">
+    <button class="active" onclick="showStandings('driver')">車手榜</button>
+    <button onclick="showStandings('team')">車隊榜</button>
+  </div>
+  <div id="standingsBody"></div>
+</div>
+
+<div class="view" id="v-more">
+  <div class="section-head" style="margin-bottom:14px">設定</div>
+  <div class="setting-row">
+    <div><div class="setting-label">通知提醒</div><div class="setting-desc">比賽前 1 小時推播通知</div></div>
+    <button class="notify-btn" id="notifyBtn" onclick="toggleNotify()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text2);padding:8px 14px;border-radius:8px;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">開啟通知</button>
+  </div>
+  <div style="text-align:center;padding:40px 0;color:var(--text3);font-size:12px">
+    F1 Tracker v2.0<br>即時資料來自 OpenF1 API<br>積分資料來自 Ergast API
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-item active" data-view="v-schedule">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    賽程
+  </button>
+  <button class="tab-item" data-view="v-track">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3c-2 3-2 6 0 9s2 6 0 9"/><path d="M3 12h18"/></svg>
+    賽道
+  </button>
+  <button class="tab-item" data-view="v-standings">
+    <svg viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 22V2h4v20"/><rect x="6" y="14" width="4" height="8"/><rect x="14" y="10" width="4" height="12"/></svg>
+    積分
+  </button>
+  <button class="tab-item" data-view="v-more">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4m-8.66-3.34 2.83-2.83m11.66-5.66 2.83-2.83M1 12h4m14 0h4m-3.34 8.66-2.83-2.83M6.17 6.17 3.34 3.34"/></svg>
+    更多
+  </button>
+</div>
+
+<script>
+const RACES=[
+{round:1,name:"澳洲大獎賽",circuit:"Albert Park",loc:"墨爾本",flag:"🇦🇺",date:"2026-03-08",rt:"2026-03-08T04:00:00Z",laps:58,s:{FP1:"2026-03-06T01:30:00Z",FP2:"2026-03-06T05:00:00Z",FP3:"2026-03-07T01:30:00Z",QU:"2026-03-07T05:00:00Z"}},
+{round:2,name:"中國大獎賽",circuit:"Shanghai",loc:"上海",flag:"🇨🇳",date:"2026-03-15",rt:"2026-03-15T07:00:00Z",laps:56,s:{FP1:"2026-03-13T03:30:00Z",FP2:"2026-03-13T07:00:00Z",FP3:"2026-03-14T03:30:00Z",QU:"2026-03-14T07:00:00Z"}},
+{round:3,name:"日本大獎賽",circuit:"Suzuka",loc:"鈴鹿",flag:"🇯🇵",date:"2026-03-29",rt:"2026-03-29T05:00:00Z",laps:53,s:{FP1:"2026-03-27T02:30:00Z",FP2:"2026-03-27T06:00:00Z",FP3:"2026-03-28T02:30:00Z",QU:"2026-03-28T06:00:00Z"}},
+{round:4,name:"邁阿密大獎賽",circuit:"Miami",loc:"邁阿密",flag:"🇺🇸",date:"2026-05-03",rt:"2026-05-03T20:00:00Z",laps:57,s:{FP1:"2026-05-01T17:30:00Z",FP2:"2026-05-01T21:00:00Z",FP3:"2026-05-02T17:30:00Z",QU:"2026-05-02T20:00:00Z"}},
+{round:5,name:"加拿大大獎賽",circuit:"Gilles Villeneuve",loc:"蒙特婁",flag:"🇨🇦",date:"2026-05-24",rt:"2026-05-24T20:00:00Z",laps:70,s:{FP1:"2026-05-22T17:30:00Z",FP2:"2026-05-22T21:00:00Z",FP3:"2026-05-23T17:30:00Z",QU:"2026-05-23T20:00:00Z"}},
+{round:6,name:"摩納哥大獎賽",circuit:"Monaco",loc:"蒙地卡羅",flag:"🇲🇨",date:"2026-06-07",rt:"2026-06-07T13:00:00Z",laps:78,s:{FP1:"2026-06-05T11:30:00Z",FP2:"2026-06-05T15:00:00Z",FP3:"2026-06-06T10:30:00Z",QU:"2026-06-06T14:00:00Z"}},
+{round:7,name:"巴塞隆納大獎賽",circuit:"Barcelona-Catalunya",loc:"巴塞隆納",flag:"🇪🇸",date:"2026-06-14",rt:"2026-06-14T13:00:00Z",laps:66,s:{FP1:"2026-06-12T11:30:00Z",FP2:"2026-06-12T15:00:00Z",FP3:"2026-06-13T10:30:00Z",QU:"2026-06-13T14:00:00Z"}},
+{round:8,name:"奧地利大獎賽",circuit:"Red Bull Ring",loc:"施皮爾貝格",flag:"🇦🇹",date:"2026-06-28",rt:"2026-06-28T13:00:00Z",laps:71,s:{FP1:"2026-06-26T11:30:00Z",FP2:"2026-06-26T15:00:00Z",FP3:"2026-06-27T10:30:00Z",QU:"2026-06-27T14:00:00Z"}},
+{round:9,name:"英國大獎賽",circuit:"Silverstone",loc:"銀石",flag:"🇬🇧",date:"2026-07-05",rt:"2026-07-05T14:00:00Z",laps:52,s:{FP1:"2026-07-03T11:30:00Z",FP2:"2026-07-03T15:00:00Z",FP3:"2026-07-04T10:30:00Z",QU:"2026-07-04T14:00:00Z"}},
+{round:10,name:"比利時大獎賽",circuit:"Spa-Francorchamps",loc:"斯塔沃洛",flag:"🇧🇪",date:"2026-07-19",rt:"2026-07-19T13:00:00Z",laps:44,s:{FP1:"2026-07-17T11:30:00Z",FP2:"2026-07-17T15:00:00Z",FP3:"2026-07-18T10:30:00Z",QU:"2026-07-18T14:00:00Z"}},
+{round:11,name:"匈牙利大獎賽",circuit:"Hungaroring",loc:"布達佩斯",flag:"🇭🇺",date:"2026-07-26",rt:"2026-07-26T13:00:00Z",laps:70,s:{FP1:"2026-07-24T11:30:00Z",FP2:"2026-07-24T15:00:00Z",FP3:"2026-07-25T10:30:00Z",QU:"2026-07-25T14:00:00Z"}},
+{round:12,name:"荷蘭大獎賽",circuit:"Zandvoort",loc:"乍得福特",flag:"🇳🇱",date:"2026-08-23",rt:"2026-08-23T13:00:00Z",laps:72,s:{FP1:"2026-08-21T10:30:00Z",FP2:"2026-08-21T14:00:00Z",FP3:"2026-08-22T09:30:00Z",QU:"2026-08-22T13:00:00Z"}},
+{round:13,name:"義大利大獎賽",circuit:"Monza",loc:"蒙扎",flag:"🇮🇹",date:"2026-09-06",rt:"2026-09-06T13:00:00Z",laps:53,s:{FP1:"2026-09-04T11:30:00Z",FP2:"2026-09-04T15:00:00Z",FP3:"2026-09-05T10:30:00Z",QU:"2026-09-05T14:00:00Z"}},
+{round:14,name:"馬德里大獎賽",circuit:"Circuito de Madrid",loc:"馬德里",flag:"🇪🇸",date:"2026-09-13",rt:"2026-09-13T13:00:00Z",laps:66,s:{FP1:"2026-09-11T11:30:00Z",FP2:"2026-09-11T15:00:00Z",FP3:"2026-09-12T10:30:00Z",QU:"2026-09-12T14:00:00Z"}},
+{round:15,name:"亞塞拜然大獎賽",circuit:"Baku City Circuit",loc:"巴庫",flag:"🇦🇿",date:"2026-09-26",rt:"2026-09-26T11:00:00Z",laps:51,s:{FP1:"2026-09-24T09:30:00Z",FP2:"2026-09-24T13:00:00Z",FP3:"2026-09-25T08:30:00Z",QU:"2026-09-25T12:00:00Z"}},
+{round:16,name:"新加坡大獎賽",circuit:"Marina Bay",loc:"新加坡",flag:"🇸🇬",date:"2026-10-11",rt:"2026-10-11T12:00:00Z",laps:62,s:{FP1:"2026-10-09T09:30:00Z",FP2:"2026-10-09T13:00:00Z",FP3:"2026-10-10T09:30:00Z",QU:"2026-10-10T13:00:00Z"}},
+{round:17,name:"美國大獎賽",circuit:"COTA",loc:"奧斯汀",flag:"🇺🇸",date:"2026-10-25",rt:"2026-10-25T20:00:00Z",laps:56,s:{FP1:"2026-10-23T17:30:00Z",FP2:"2026-10-23T21:00:00Z",FP3:"2026-10-24T17:30:00Z",QU:"2026-10-24T21:00:00Z"}},
+{round:18,name:"墨西哥大獎賽",circuit:"Hermanos Rodríguez",loc:"墨西哥城",flag:"🇲🇽",date:"2026-11-01",rt:"2026-11-01T20:00:00Z",laps:71,s:{FP1:"2026-10-30T18:30:00Z",FP2:"2026-10-30T22:00:00Z",FP3:"2026-10-31T17:30:00Z",QU:"2026-10-31T21:00:00Z"}},
+{round:19,name:"巴西大獎賽",circuit:"Interlagos",loc:"聖保羅",flag:"🇧🇷",date:"2026-11-08",rt:"2026-11-08T17:00:00Z",laps:71,s:{FP1:"2026-11-06T14:30:00Z",FP2:"2026-11-06T18:00:00Z",FP3:"2026-11-07T14:30:00Z",QU:"2026-11-07T18:00:00Z"}},
+{round:20,name:"拉斯維加斯大獎賽",circuit:"Las Vegas Strip",loc:"拉斯維加斯",flag:"🇺🇸",date:"2026-11-22",rt:"2026-11-22T04:00:00Z",laps:50,s:{FP1:"2026-11-20T02:30:00Z",FP2:"2026-11-20T06:00:00Z",FP3:"2026-11-21T02:30:00Z",QU:"2026-11-21T06:00:00Z"}},
+{round:21,name:"卡達大獎賽",circuit:"Lusail",loc:"盧賽爾",flag:"🇶🇦",date:"2026-11-29",rt:"2026-11-29T16:00:00Z",laps:57,s:{FP1:"2026-11-27T13:30:00Z",FP2:"2026-11-27T17:00:00Z",FP3:"2026-11-28T13:30:00Z",QU:"2026-11-28T17:00:00Z"}},
+{round:22,name:"阿布達比大獎賽",circuit:"Yas Marina",loc:"阿布達比",flag:"🇦🇪",date:"2026-12-06",rt:"2026-12-06T13:00:00Z",laps:58,s:{FP1:"2026-12-04T09:30:00Z",FP2:"2026-12-04T13:00:00Z",FP3:"2026-12-05T10:30:00Z",QU:"2026-12-05T14:00:00Z"}}
+];
+
+const TC={
+  "Red Bull Racing":"#3671C6","Red Bull":"#3671C6",
+  "McLaren":"#FF8000","Ferrari":"#E8002D",
+  "Mercedes":"#27F4D2","Aston Martin":"#229971",
+  "Alpine F1 Team":"#FF87BC","Alpine":"#FF87BC",
+  "Williams":"#64C4FF",
+  "RB F1 Team":"#6692FF","RB":"#6692FF",
+  "Audi":"#52E252","Kick Sauber":"#52E252",
+  "Haas F1 Team":"#B6BABD","Haas":"#B6BABD",
+  "Cadillac F1 Team":"#C0A44D","Cadillac":"#C0A44D"
+};
+const DRIVERS=[
+  {n:1,a:"VER",name:"Verstappen",full:"Max Verstappen",t:"Red Bull"},
+  {n:6,a:"HAD",name:"Hadjar",full:"Isack Hadjar",t:"Red Bull"},
+  {n:4,a:"NOR",name:"Norris",full:"Lando Norris",t:"McLaren"},
+  {n:81,a:"PIA",name:"Piastri",full:"Oscar Piastri",t:"McLaren"},
+  {n:16,a:"LEC",name:"Leclerc",full:"Charles Leclerc",t:"Ferrari"},
+  {n:44,a:"HAM",name:"Hamilton",full:"Lewis Hamilton",t:"Ferrari"},
+  {n:63,a:"RUS",name:"Russell",full:"George Russell",t:"Mercedes"},
+  {n:12,a:"ANT",name:"Antonelli",full:"Kimi Antonelli",t:"Mercedes"},
+  {n:14,a:"ALO",name:"Alonso",full:"Fernando Alonso",t:"Aston Martin"},
+  {n:18,a:"STR",name:"Stroll",full:"Lance Stroll",t:"Aston Martin"},
+  {n:10,a:"GAS",name:"Gasly",full:"Pierre Gasly",t:"Alpine"},
+  {n:43,a:"COL",name:"Colapinto",full:"Franco Colapinto",t:"Alpine"},
+  {n:23,a:"ALB",name:"Albon",full:"Alexander Albon",t:"Williams"},
+  {n:55,a:"SAI",name:"Sainz",full:"Carlos Sainz",t:"Williams"},
+  {n:30,a:"LAW",name:"Lawson",full:"Liam Lawson",t:"RB"},
+  {n:41,a:"LIN",name:"Lindblad",full:"Arvid Lindblad",t:"RB"},
+  {n:27,a:"HUL",name:"Hülkenberg",full:"Nico Hülkenberg",t:"Audi"},
+  {n:5,a:"BOR",name:"Bortoleto",full:"Gabriel Bortoleto",t:"Audi"},
+  {n:31,a:"OCO",name:"Ocon",full:"Esteban Ocon",t:"Haas"},
+  {n:87,a:"BEA",name:"Bearman",full:"Oliver Bearman",t:"Haas"},
+  {n:11,a:"PER",name:"Pérez",full:"Sergio Pérez",t:"Cadillac"},
+  {n:77,a:"BOT",name:"Bottas",full:"Valtteri Bottas",t:"Cadillac"}
+];
+
+const TRACKS={
+  1:[[.395,.73],[.242,.609],[.235,.596],[.245,.58],[.25,.551],[.237,.518],[.194,.485],[.12,.425],[.049,.348],[0,.276],[.011,.264],[.088,.251],[.097,.239],[.094,.158],[.104,.121],[.198,.069],[.321,.026],[.355,.016],[.379,.033],[.431,.048],[.487,.056],[.534,.082],[.565,.126],[.587,.222],[.581,.253],[.558,.281],[.544,.299],[.517,.396],[.515,.428],[.524,.479],[.547,.523],[.59,.568],[.673,.623],[.707,.63],[.75,.629],[.782,.635],[.871,.694],[.919,.732],[.94,.764],[.995,.912],[1,.936],[.92,.962],[.843,.984],[.813,.975],[.763,.908],[.733,.872],[.721,.872],[.667,.917],[.646,.92],[.621,.912]],
+  2:[[.265,.796],[.176,.813],[.135,.806],[.105,.783],[.094,.752],[.1,.722],[.114,.708],[.162,.706],[.172,.724],[.162,.758],[.187,.777],[.214,.763],[.223,.745],[.225,.711],[.197,.677],[.1,.581],[.053,.525],[.01,.417],[.004,.381],[.041,.389],[.084,.424],[.161,.537],[.197,.574],[.228,.586],[.281,.586],[.33,.562],[.376,.487],[.405,.463],[.438,.455],[.475,.467],[.524,.535],[.552,.544],[.599,.495],[.514,.36],[.405,.208],[.382,.213],[.357,.235],[.327,.228],[.306,.199],[.305,.176],[.322,.142],[.363,.127],[.41,.13],[.455,.156],[.754,.544],[.86,.683],[1,.862],[.984,.874],[.94,.851],[.788,.69]],
+  3:[[.854,.515],[.994,.656],[1,.678],[.981,.715],[.959,.719],[.891,.647],[.866,.638],[.819,.625],[.802,.58],[.778,.565],[.723,.558],[.704,.538],[.717,.49],[.718,.472],[.688,.448],[.654,.437],[.607,.437],[.575,.45],[.502,.516],[.419,.524],[.412,.514],[.384,.394],[.39,.374],[.405,.341],[.395,.335],[.383,.342],[.338,.399],[.31,.415],[.245,.42],[.188,.406],[.142,.381],[.115,.351],[.078,.286],[.048,.281],[.016,.288],[.001,.315],[.012,.333],[.07,.373],[.134,.404],[.25,.441],[.374,.476],[.443,.489],[.486,.475],[.539,.439],[.598,.398],[.609,.397],[.631,.407],[.655,.392],[.704,.39],[.742,.406]],
+  4:[[.494,.421],[.632,.503],[.627,.516],[.589,.544],[.589,.576],[.579,.61],[.523,.639],[.475,.643],[.426,.629],[.272,.546],[.251,.544],[.226,.549],[.201,.564],[.171,.575],[.14,.566],[.11,.541],[.078,.531],[.026,.546],[.004,.57],[0,.599],[.009,.614],[.033,.62],[.068,.616],[.175,.636],[.355,.63],[.423,.651],[.493,.672],[.577,.679],[.662,.659],[.808,.611],[.9,.569],[.943,.54],[.934,.527],[.906,.51],[.902,.473],[.921,.462],[.967,.462],[.984,.449],[.999,.418],[.984,.41],[.997,.364],[.99,.353],[.498,.336],[.121,.324],[.123,.341],[.155,.364],[.194,.379],[.228,.371],[.295,.347],[.355,.349]],
+  5:[[.657,.724],[.687,.823],[.695,.88],[.686,.957],[.723,.972],[.732,.981],[.727,.993],[.709,1],[.681,.998],[.624,.985],[.58,.967],[.502,.918],[.495,.908],[.5,.892],[.501,.879],[.442,.827],[.413,.812],[.389,.794],[.377,.769],[.376,.684],[.372,.673],[.353,.667],[.328,.67],[.307,.664],[.294,.654],[.285,.638],[.275,.596],[.269,.508],[.273,.456],[.281,.417],[.315,.328],[.329,.324],[.348,.322],[.364,.312],[.377,.295],[.417,.169],[.422,.107],[.42,.085],[.398,.009],[.404,.001],[.419,.001],[.424,.007],[.43,.048],[.436,.065],[.465,.106],[.54,.244],[.645,.595],[.639,.603],[.626,.609],[.624,.618]],
+  6:[[.653,.209],[.662,.178],[.81,.032],[.845,.025],[.865,.051],[.879,.083],[.905,.116],[.925,.119],[.929,.103],[.883,.062],[.889,.046],[.95,.03],[.996,.028],[.983,.171],[.925,.279],[.742,.388],[.541,.438],[.463,.453],[.458,.468],[.415,.466],[.142,.492],[.105,.502],[.073,.556],[.064,.628],[.076,.65],[.112,.687],[.137,.786],[.121,.802],[.11,.823],[.145,.884],[.228,.937],[.249,.957],[.196,.976],[.145,.977],[.131,.96],[.086,.904],[.028,.784],[.006,.693],[.002,.584],[.02,.524],[.025,.483],[.061,.471],[.149,.464],[.323,.431],[.424,.417],[.609,.373],[.69,.352],[.728,.308],[.716,.264],[.675,.23]],
+  7:[[.788,.451],[.512,.779],[.399,.912],[.373,.92],[.347,.915],[.296,.897],[.256,.904],[.16,.953],[.121,.958],[.079,.953],[.046,.936],[.01,.898],[0,.857],[.011,.804],[.04,.757],[.188,.593],[.232,.592],[.266,.613],[.281,.659],[.269,.694],[.16,.83],[.166,.85],[.188,.861],[.212,.858],[.393,.79],[.483,.698],[.489,.67],[.445,.641],[.416,.618],[.336,.478],[.334,.444],[.351,.416],[.827,.225],[.855,.206],[.847,.183],[.811,.165],[.771,.161],[.723,.172],[.671,.201],[.625,.204],[.592,.183],[.584,.158],[.606,.126],[.737,.048],[.783,.042],[.836,.06],[.904,.094],[.979,.132],[.997,.16],[.997,.199]],
+  8:[[.667,.67],[.598,.682],[.415,.714],[.407,.709],[.352,.654],[.271,.571],[.239,.533],[.171,.433],[.149,.409],[.056,.341],[0,.3],[0,.295],[.02,.29],[.107,.286],[.152,.286],[.245,.294],[.397,.314],[.615,.325],[.635,.333],[.638,.339],[.633,.352],[.607,.376],[.585,.39],[.532,.405],[.501,.408],[.34,.393],[.309,.398],[.297,.403],[.28,.42],[.276,.43],[.277,.449],[.343,.53],[.353,.538],[.389,.548],[.426,.541],[.438,.535],[.462,.514],[.474,.506],[.506,.492],[.554,.483],[.752,.48],[.92,.477],[.949,.488],[.959,.496],[.998,.579],[1,.586],[.995,.594],[.966,.607],[.946,.614],[.894,.628]],
+  9:[[.592,.009],[.801,.001],[.86,.026],[.895,.093],[.916,.161],[.926,.283],[.962,.342],[.97,.365],[.934,.445],[.979,.497],[.987,.522],[.941,.558],[.868,.589],[.593,.898],[.503,.982],[.448,1],[.393,.992],[.366,.973],[.321,.92],[.265,.877],[.157,.804],[.138,.806],[.089,.824],[.056,.807],[.029,.78],[.013,.744],[.034,.718],[.294,.51],[.342,.493],[.447,.5],[.517,.5],[.56,.489],[.715,.416],[.742,.422],[.77,.476],[.797,.488],[.822,.472],[.84,.442],[.85,.402],[.832,.373],[.366,.117],[.325,.117],[.29,.138],[.266,.199],[.232,.205],[.19,.189],[.185,.164],[.252,.08],[.313,.042],[.383,.022]],
+  10:[[.308,.106],[.224,.002],[.27,.011],[.406,.061],[.594,.195],[.647,.218],[.677,.247],[.688,.285],[.764,.366],[.824,.436],[.965,.746],[.982,.803],[.955,.818],[.939,.835],[.956,.896],[.934,.917],[.729,1],[.697,.98],[.707,.959],[.804,.918],[.81,.897],[.743,.733],[.723,.673],[.692,.654],[.615,.647],[.564,.655],[.524,.68],[.427,.829],[.394,.851],[.354,.852],[.312,.838],[.269,.84],[.242,.859],[.152,.94],[.068,.915],[.024,.888],[.016,.863],[.03,.833],[.076,.779],[.18,.714],[.345,.658],[.391,.63],[.434,.581],[.473,.517],[.452,.464],[.403,.375],[.391,.325],[.39,.252],[.418,.252],[.432,.244]],
+  11:[[.249,.693],[.008,.564],[.001,.546],[.017,.536],[.085,.535],[.167,.551],[.204,.566],[.378,.653],[.407,.649],[.425,.636],[.429,.617],[.38,.555],[.374,.538],[.384,.517],[.533,.317],[.578,.279],[.579,.262],[.54,.155],[.548,.134],[.577,.12],[.612,.121],[.656,.138],[.704,.166],[.787,.23],[.784,.242],[.77,.254],[.801,.34],[.817,.357],[.83,.362],[.917,.373],[.937,.387],[.942,.406],[.925,.498],[.934,.522],[.998,.595],[.999,.614],[.986,.633],[.764,.803],[.743,.806],[.731,.8],[.613,.721],[.587,.714],[.559,.724],[.551,.741],[.562,.759],[.671,.82],[.681,.842],[.671,.865],[.637,.88],[.593,.877]],
+  12:[[.122,.478],[.277,.252],[.3,.241],[.339,.247],[.353,.261],[.341,.288],[.289,.391],[.288,.425],[.243,.444],[.178,.463],[.173,.48],[.201,.498],[.316,.479],[.398,.473],[.486,.482],[.558,.489],[.646,.47],[.716,.446],[.774,.439],[.932,.447],[.972,.462],[.993,.482],[.998,.519],[.979,.546],[.87,.66],[.825,.666],[.774,.663],[.684,.635],[.661,.614],[.693,.589],[.76,.579],[.837,.564],[.867,.534],[.843,.512],[.748,.502],[.51,.52],[.416,.54],[.316,.57],[.297,.56],[.273,.544],[.228,.556],[.228,.581],[.268,.728],[.25,.75],[.216,.759],[.105,.757],[.063,.748],[.022,.722],[0,.682],[.009,.645]],
+  13:[[.113,.635],[.148,.355],[.156,.349],[.167,.349],[.177,.345],[.177,.341],[.157,.272],[.164,.201],[.174,.173],[.187,.152],[.223,.121],[.255,.102],[.316,.083],[.365,.075],[.623,.062],[.635,.06],[.644,.044],[.652,.041],[.715,.03],[.845,0],[.87,.003],[.883,.009],[.898,.025],[.904,.071],[.912,.148],[.906,.154],[.757,.212],[.699,.235],[.648,.262],[.53,.334],[.355,.443],[.351,.45],[.354,.471],[.353,.483],[.341,.502],[.323,.514],[.309,.526],[.3,.57],[.239,.97],[.233,.982],[.211,.996],[.189,1],[.159,.995],[.14,.988],[.113,.968],[.101,.951],[.09,.921],[.088,.894],[.086,.834],[.09,.778]],
+  14:[[.609,.945],[.465,.967],[.46,.994],[.413,1],[.343,.976],[.184,.783],[.157,.739],[.135,.659],[.141,.602],[.168,.558],[.166,.544],[.161,.534],[.169,.521],[.15,.466],[.128,.442],[.109,.387],[.092,.358],[.114,.345],[.122,.326],[.093,.275],[.094,.193],[.123,.172],[.153,.13],[.123,.071],[.122,.039],[.167,.003],[.215,.001],[.263,.026],[.282,.066],[.255,.125],[.174,.204],[.135,.254],[.205,.304],[.236,.33],[.241,.403],[.264,.443],[.296,.463],[.416,.468],[.458,.453],[.493,.489],[.533,.544],[.572,.563],[.657,.558],[.704,.579],[.748,.745],[.764,.755],[.791,.743],[.879,.776],[.907,.88],[.897,.906]],
+  15:[[.92,.364],[.993,.34],[1,.334],[.999,.326],[.984,.297],[.938,.224],[.93,.222],[.775,.268],[.658,.308],[.55,.349],[.583,.421],[.584,.426],[.521,.451],[.445,.486],[.443,.493],[.451,.505],[.447,.511],[.331,.581],[.314,.592],[.3,.596],[.267,.532],[.259,.529],[.253,.529],[.238,.523],[.226,.524],[.219,.522],[.211,.504],[.204,.5],[.156,.51],[.089,.535],[.036,.561],[.023,.578],[0,.642],[.007,.719],[.015,.729],[.131,.774],[.144,.777],[.161,.777],[.172,.77],[.205,.723],[.213,.716],[.297,.655],[.307,.613],[.31,.606],[.323,.595],[.45,.521],[.483,.508],[.533,.492],[.687,.44],[.846,.388]],
+  16:[[.978,.423],[1,.594],[.993,.612],[.964,.656],[.94,.658],[.781,.645],[.761,.637],[.749,.604],[.747,.592],[.72,.591],[.425,.573],[.39,.56],[.289,.472],[.268,.468],[.256,.477],[.237,.546],[.183,.816],[.176,.823],[.163,.824],[.143,.801],[.131,.781],[.085,.742],[.063,.704],[.066,.688],[.068,.674],[.033,.658],[.007,.638],[0,.617],[.012,.586],[.132,.371],[.146,.358],[.172,.363],[.258,.444],[.267,.434],[.327,.327],[.35,.321],[.536,.429],[.586,.444],[.863,.451],[.881,.431],[.88,.392],[.845,.279],[.839,.255],[.842,.201],[.865,.176],[.879,.186],[.887,.197],[.924,.215],[.95,.217],[.957,.233]],
+  17:[[.201,.657],[.335,.744],[.348,.747],[.353,.738],[.324,.66],[.328,.633],[.343,.613],[.413,.575],[.447,.551],[.457,.527],[.477,.512],[.504,.499],[.514,.475],[.519,.456],[.531,.441],[.562,.424],[.581,.423],[.651,.447],[.677,.432],[.701,.407],[.726,.4],[.745,.409],[.757,.423],[.859,.407],[.926,.344],[.999,.262],[.997,.255],[.983,.253],[.737,.314],[.379,.36],[.359,.366],[.407,.423],[.423,.452],[.413,.459],[.372,.454],[.362,.435],[.333,.405],[.308,.402],[.3,.406],[.351,.49],[.35,.508],[.335,.538],[.292,.556],[.259,.556],[.229,.545],[.184,.493],[.145,.458],[.126,.462],[.001,.513],[.004,.522]],
+  18:[[.183,.173],[.511,.215],[.637,.227],[.926,.267],[.97,.277],[.975,.284],[.969,.331],[.972,.338],[.997,.351],[1,.359],[.99,.41],[.97,.454],[.784,.739],[.777,.755],[.781,.764],[.815,.785],[.813,.793],[.751,.837],[.741,.84],[.726,.833],[.725,.821],[.75,.625],[.744,.615],[.707,.593],[.69,.578],[.677,.549],[.662,.532],[.642,.522],[.539,.505],[.529,.497],[.515,.457],[.505,.443],[.421,.4],[.372,.385],[.137,.352],[.132,.345],[.128,.283],[.121,.24],[.113,.235],[.101,.241],[.088,.256],[.076,.258],[.06,.251],[.013,.245],[.003,.24],[0,.231],[.008,.207],[.026,.181],[.055,.164],[.083,.16]],
+  19:[[.222,.718],[.296,.97],[.329,1],[.377,.979],[.412,.952],[.489,.981],[.537,.988],[.596,.975],[.66,.922],[.706,.803],[.81,.431],[.843,.316],[.834,.278],[.789,.261],[.694,.249],[.631,.271],[.586,.316],[.429,.513],[.389,.561],[.348,.574],[.284,.562],[.248,.536],[.226,.466],[.218,.396],[.24,.374],[.265,.378],[.306,.403],[.34,.4],[.364,.369],[.349,.327],[.29,.272],[.261,.193],[.265,.159],[.282,.151],[.371,.232],[.402,.249],[.447,.255],[.499,.239],[.535,.203],[.626,.065],[.62,.045],[.52,.004],[.471,.003],[.351,.033],[.281,.068],[.244,.101],[.208,.188],[.175,.328],[.155,.431],[.166,.507]],
+  20:[[.809,.888],[.851,.85],[.858,.834],[.846,.821],[.821,.815],[.797,.819],[.75,.849],[.722,.857],[.692,.852],[.672,.841],[.65,.808],[.649,.363],[.767,.361],[.819,.358],[.846,.337],[.861,.316],[.869,.294],[.871,.27],[.848,.266],[.838,.257],[.837,.24],[.855,.212],[.859,.192],[.823,.183],[.579,.171],[.534,.143],[.482,.05],[.441,.021],[.386,.006],[.343,.001],[.334,.015],[.291,.084],[.254,.139],[.218,.189],[.183,.263],[.16,.327],[.148,.38],[.141,.442],[.14,.543],[.141,.617],[.131,.869],[.129,.963],[.137,.969],[.158,.971],[.194,.995],[.315,1],[.55,.999],[.644,.994],[.7,.983],[.716,.972]],
+  21:[[.195,.605],[.034,.339],[.033,.311],[.048,.291],[.078,.281],[.209,.347],[.234,.351],[.265,.335],[.272,.218],[.278,.195],[.291,.177],[.466,.005],[.493,0],[.518,.009],[.572,.06],[.571,.094],[.456,.21],[.451,.226],[.459,.239],[.478,.244],[.495,.238],[.695,.17],[.732,.186],[.741,.208],[.737,.228],[.723,.244],[.692,.272],[.667,.307],[.653,.343],[.635,.388],[.615,.398],[.499,.427],[.487,.442],[.488,.465],[.519,.497],[.582,.534],[.679,.554],[.873,.535],[.904,.545],[.929,.569],[.969,.641],[.968,.661],[.902,.758],[.873,.771],[.675,.737],[.649,.741],[.631,.756],[.493,.991],[.464,1],[.439,.994]],
+  22:[[.494,.56],[.654,.539],[.666,.517],[.639,.414],[.619,.389],[.554,.367],[.533,.352],[.514,.323],[.514,.286],[.53,.234],[.532,.169],[.51,.018],[.504,.008],[.486,0],[.472,.007],[.466,.016],[.371,.286],[.312,.446],[.272,.569],[.242,.652],[.252,.659],[.282,.656],[.303,.718],[.337,.774],[.381,.814],[.527,.918],[.608,.959],[.687,.993],[.73,.998],[.75,.982],[.757,.967],[.754,.941],[.739,.92],[.72,.911],[.583,.9],[.513,.863],[.503,.854],[.486,.781],[.542,.77],[.552,.766],[.56,.748],[.553,.697],[.537,.693],[.508,.692],[.386,.706],[.368,.702],[.33,.647],[.31,.611],[.309,.596],[.319,.583]]
+};
+
+// ==================== UTILS ====================
+function tw(u){return new Date(u).toLocaleDateString('zh-TW',{timeZone:'Asia/Taipei',month:'numeric',day:'numeric',weekday:'short'})}
+function twT(u){return new Date(u).toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit',hour12:false})}
+function twFull(u){return new Date(u).toLocaleDateString('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'long',day:'numeric',weekday:'long'})}
+function sessN(k){return{FP1:'練習賽 1',FP2:'練習賽 2',FP3:'練習賽 3',QU:'排位賽'}[k]||k}
+function nextRace(){return RACES.find(r=>new Date(r.rt)>new Date())}
+function isLive(r){const n=Date.now(),s=new Date(r.rt).getTime();return n>=s&&n<=s+9e6}
+function driverByNum(num){return DRIVERS.find(d=>d.n===num)}
+
+// ==================== TABS ====================
+document.querySelectorAll('.tab-item').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab-item').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.view).classList.add('active');
+    if(btn.dataset.view==='v-track') initTrack();
+    if(btn.dataset.view==='v-standings') loadStandings();
+  });
+});
+
+// ==================== SCHEDULE ====================
+function renderSchedule(){
+  const nr=nextRace();
+  const hero=document.getElementById('heroBanner');
+  if(nr){
+    const live=isLive(nr);
+    const sh=Object.entries(nr.s).map(([k,t])=>
+      `<div class="session-chip"><span class="label">${sessN(k)}</span><span class="time">${tw(t)} ${twT(t)}</span></div>`
+    ).join('');
+    hero.innerHTML=`
+      <div class="hero-eyebrow ${live?'live':''}">${live?'比賽進行中':'下一場比賽'}</div>
+      <div class="hero-title">${nr.flag} ${nr.name}</div>
+      <div class="hero-sub">${nr.circuit} · ${nr.loc}</div>
+      <div class="hero-countdown" id="cd"></div>
+      <div class="hero-race-time">正賽：${twFull(nr.rt)} ${twT(nr.rt)}</div>
+      <div class="sessions-grid">${sh}</div>`;
+    startCD(nr);
+  } else {
+    hero.innerHTML=`<div class="hero-eyebrow">賽季結束</div><div class="hero-title">2026 賽季已結束</div>`;
+  }
+  document.getElementById('raceList').innerHTML=RACES.map(r=>{
+    const past=new Date(r.rt)<new Date()&&!isLive(r),live=isLive(r);
+    return `<div class="race-row ${past?'past':''} ${live?'live':''}">
+      <div class="race-round">${r.round}</div>
+      <div class="race-info"><div class="race-name">${r.flag} ${r.name}</div><div class="race-circuit">${r.circuit}</div></div>
+      <div class="race-date"><div class="d">${tw(r.rt)}</div><div class="t">${twT(r.rt)}</div></div>
+      ${live?'<div class="live-pill">LIVE</div>':''}
+    </div>`;
+  }).join('');
+}
+
+let cdTimer=null;
+function startCD(race){
+  if(cdTimer)clearInterval(cdTimer);
+  const el=()=>document.getElementById('cd');
+  function upd(){
+    const e=el();if(!e)return;
+    const diff=new Date(race.rt)-new Date();
+    if(diff<=0){e.textContent='比賽進行中';clearInterval(cdTimer);return}
+    const d=Math.floor(diff/864e5),h=Math.floor(diff%864e5/36e5),m=Math.floor(diff%36e5/6e4),s=Math.floor(diff%6e4/1e3);
+    e.innerHTML=`${d}<small>天</small>${String(h).padStart(2,'0')}<small>時</small>${String(m).padStart(2,'0')}<small>分</small>${String(s).padStart(2,'0')}<small>秒</small>`;
+  }
+  upd();cdTimer=setInterval(upd,1000);
+}
+
+// ==================== OPENF1 LIVE DATA ====================
+let livePositions=[];
+let liveDataOk=false;
+
+async function fetchLiveData(){
+  try{
+    const r=await fetch('https://api.openf1.org/v1/position?session_key=latest');
+    if(!r.ok) throw 0;
+    const arr=await r.json();
+    if(!arr.length) throw 0;
+    const latest={};
+    arr.forEach(p=>{
+      if(!latest[p.driver_number]||new Date(p.date)>new Date(latest[p.driver_number].date))
+        latest[p.driver_number]=p;
+    });
+    livePositions=Object.values(latest).filter(p=>p.position).sort((a,b)=>a.position-b.position).map(p=>({num:p.driver_number,pos:p.position}));
+    liveDataOk=true;
+    return true;
+  }catch(e){liveDataOk=false;return false}
+}
+
+// ==================== CANVAS TRACK ====================
+let tCanvas,tCtx,curRace=null,animId=null,liveInterval=null;
+
+function getP(pts,t){
+  t=((t%1)+1)%1;const n=pts.length,idx=t*n,i0=Math.floor(idx)%n,i1=(i0+1)%n,f=idx-Math.floor(idx);
+  const im=(i0-1+n)%n,i2=(i1+1)%n,tt=f,t2=tt*tt,t3=t2*tt;
+  function cr(a,b,c,d){return .5*((2*b)+(c-a)*tt+(2*a-5*b+4*c-d)*t2+(3*b-a-3*c+d)*t3)}
+  return[cr(pts[im][0],pts[i0][0],pts[i1][0],pts[i2][0]),cr(pts[im][1],pts[i0][1],pts[i1][1],pts[i2][1])]
+}
+
+function initTrack(){
+  tCanvas=document.getElementById('trackCanvas');
+  tCtx=tCanvas.getContext('2d');
+  const box=tCanvas.parentElement;
+  tCanvas.width=box.clientWidth*devicePixelRatio;
+  tCanvas.height=box.clientHeight*devicePixelRatio;
+  tCtx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+
+  const lr=RACES.find(r=>isLive(r));
+  const race=lr||nextRace()||RACES[0];
+  curRace=race;
+  document.getElementById('trackTitle').textContent=`${race.flag} ${race.circuit}`;
+
+  if(lr){
+    document.getElementById('trackStatus').className='track-status on';
+    document.getElementById('trackStatus').textContent='LIVE';
+    document.getElementById('refreshDot').classList.add('live');
+    startLiveMode(race);
+  } else {
+    document.getElementById('trackStatus').className='track-status off';
+    document.getElementById('trackStatus').textContent='模擬展示';
+    document.getElementById('refreshDot').classList.remove('live');
+    startSimMode(race);
+  }
+}
+
+function startSimMode(race){
+  if(animId)cancelAnimationFrame(animId);
+  if(liveInterval)clearInterval(liveInterval);
+  const pts=TRACKS[race.round]||TRACKS[1];
+  const t0=performance.now();
+  function frame(ts){
+    drawFrame(race,pts,(ts-t0)/1000,false);
+    animId=requestAnimationFrame(frame);
+  }
+  animId=requestAnimationFrame(frame);
+  renderLeaderboard(DRIVERS.map((d,i)=>({num:d.n,pos:i+1})),false);
+}
+
+async function startLiveMode(race){
+  if(animId)cancelAnimationFrame(animId);
+  if(liveInterval)clearInterval(liveInterval);
+  const pts=TRACKS[race.round]||TRACKS[1];
+
+  await fetchLiveData();
+  renderLeaderboard(livePositions.length?livePositions:DRIVERS.map((d,i)=>({num:d.n,pos:i+1})),true);
+
+  liveInterval=setInterval(async()=>{
+    await fetchLiveData();
+    renderLeaderboard(livePositions.length?livePositions:DRIVERS.map((d,i)=>({num:d.n,pos:i+1})),true);
+  },5000);
+
+  const t0=performance.now();
+  function frame(ts){
+    drawFrame(race,pts,(ts-t0)/1000,true);
+    animId=requestAnimationFrame(frame);
+  }
+  animId=requestAnimationFrame(frame);
+}
+
+function drawFrame(race,pts,elapsed,isLiveMode){
+  const w=tCanvas.width/devicePixelRatio,h=tCanvas.height/devicePixelRatio,ctx=tCtx;
+  ctx.clearRect(0,0,w,h);
+
+  const pad=36,tw2=w-pad*2,th=h-pad*2;
+  ctx.beginPath();
+  for(let i=0;i<=1;i+=.004){const[x,y]=getP(pts,i);i===0?ctx.moveTo(pad+x*tw2,pad+y*th):ctx.lineTo(pad+x*tw2,pad+y*th)}
+  ctx.closePath();
+  ctx.strokeStyle='#2A2A32';ctx.lineWidth=28;ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke();
+  ctx.strokeStyle='#333';ctx.lineWidth=24;ctx.stroke();
+  ctx.setLineDash([4,8]);ctx.strokeStyle='#444';ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
+
+  const[sx,sy]=getP(pts,0);
+  ctx.fillStyle='#fff';ctx.fillRect(pad+sx*tw2-1.5,pad+sy*th-16,3,32);
+
+  const leaderT=(elapsed*0.012)%1;
+  const lapEst=Math.min(Math.floor(elapsed/85)+1,race.laps);
+  document.getElementById('lapText').textContent=race.circuit;
+  document.getElementById('lapNum').textContent=`Lap ${lapEst}/${race.laps}`;
+
+  const positions=isLiveMode&&livePositions.length?livePositions:DRIVERS.map((d,i)=>({num:d.n,pos:i+1}));
+  positions.forEach(lp=>{
+    const drv=driverByNum(lp.num);
+    if(!drv)return;
+    const gap=(lp.pos-1)*0.032;
+    const t=leaderT-gap;
+    const[cx,cy]=getP(pts,t);
+    const x=pad+cx*tw2,y=pad+cy*th;
+    const col=TC[drv.t]||'#666';
+
+    ctx.save();
+    const bw=32,bh=14,br=4;
+    ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=4;
+    ctx.beginPath();ctx.roundRect(x-bw/2,y-bh/2,bw,bh,br);ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.font='bold 8px DM Sans,sans-serif';ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(drv.a,x,y);
+    ctx.restore();
+  });
+}
+
+function renderLeaderboard(positions,isLive){
+  document.getElementById('leaderboard').innerHTML=positions.map(lp=>{
+    const d=driverByNum(lp.num);if(!d)return'';
+    const pc=lp.pos<=3?` p${lp.pos}`:'';
+    return `<div class="lb-row">
+      <div class="lb-pos${pc}">${lp.pos}</div>
+      <div class="lb-color" style="background:${TC[d.t]||'#666'}"></div>
+      <div class="lb-info"><div class="lb-name">${d.a} ${d.name}</div><div class="lb-team">${d.t}</div></div>
+    </div>`;
+  }).join('');
+}
+
+// ==================== STANDINGS (Ergast API) ====================
+let standingsCache=null;
+
+async function loadStandings(){
+  if(standingsCache){showStandings('driver');return}
+  document.getElementById('standingsBody').innerHTML='<div style="text-align:center;padding:40px;color:var(--text3)">載入中...</div>';
+  try{
+    const r=await fetch('https://api.jolpi.ca/ergast/f1/current/driverstandings/?format=json');
+    if(!r.ok) throw 0;
+    const d=await r.json();
+    standingsCache=d.MRData.StandingsTable.StandingsLists[0].DriverStandings;
+    showStandings('driver');
+  }catch(e){
+    standingsCache=null;
+    document.getElementById('standingsBody').innerHTML='<div style="text-align:center;padding:40px;color:var(--text3)">暫時無法載入積分榜</div>';
+  }
+}
+
+function showStandings(type){
+  document.querySelectorAll('.standings-toggle button').forEach((b,i)=>{
+    b.classList.toggle('active',(type==='driver'&&i===0)||(type==='team'&&i===1));
+  });
+  const body=document.getElementById('standingsBody');
+  if(!standingsCache){body.innerHTML='<div style="text-align:center;padding:40px;color:var(--text3)">無資料</div>';return}
+
+  if(type==='driver'){
+    body.innerHTML=standingsCache.map((s,i)=>{
+      const pos=i+1,pc=pos<=3?` p${pos}`:'';
+      const tn=s.Constructors[0]?.name||'';
+      return `<div class="st-row">
+        <div class="st-pos${pc}">${s.position}</div>
+        <div class="st-color" style="background:${TC[tn]||'#666'}"></div>
+        <div class="st-info"><div class="st-driver">${s.Driver.givenName} ${s.Driver.familyName}</div><div class="st-team">${tn}${parseInt(s.wins)?` · ${s.wins} 勝`:''}</div></div>
+        <div class="st-points">${s.points}<small> PTS</small></div>
+      </div>`;
+    }).join('');
+  } else {
+    const teams={};
+    standingsCache.forEach(s=>{
+      const tn=s.Constructors[0]?.name||'Unknown';
+      if(!teams[tn])teams[tn]={t:tn,pts:0,w:0};
+      teams[tn].pts+=parseFloat(s.points);teams[tn].w+=parseInt(s.wins);
+    });
+    const sorted=Object.values(teams).sort((a,b)=>b.pts-a.pts);
+    body.innerHTML=sorted.map((s,i)=>{
+      const pos=i+1,pc=pos<=3?` p${pos}`:'';
+      return `<div class="st-row">
+        <div class="st-pos${pc}">${pos}</div>
+        <div class="st-color" style="background:${TC[s.t]||'#666'}"></div>
+        <div class="st-info"><div class="st-driver">${s.t}</div><div class="st-team">${s.w} 勝</div></div>
+        <div class="st-points">${s.pts}<small> PTS</small></div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ==================== NOTIFICATIONS ====================
+function toggleNotify(){
+  const btn=document.getElementById('notifyBtn');
+  if(!('Notification' in window)){alert('此瀏覽器不支援通知');return}
+  if(localStorage.getItem('f1_notify')!=='true'){
+    Notification.requestPermission().then(p=>{
+      if(p==='granted'){
+        localStorage.setItem('f1_notify','true');
+        btn.style.background='var(--red)';btn.style.color='#fff';btn.style.borderColor='var(--red)';
+        btn.textContent='通知已開啟';
+        registerNotifyCheck();
+      }
+    });
+  } else {
+    localStorage.removeItem('f1_notify');
+    btn.style.background='var(--surface2)';btn.style.color='var(--text2)';btn.style.borderColor='var(--border)';
+    btn.textContent='開啟通知';
+  }
+}
+
+function registerNotifyCheck(){
+  checkAndNotify();setInterval(checkAndNotify,15*60000);
+}
+
+function checkAndNotify(){
+  if(localStorage.getItem('f1_notify')!=='true')return;
+  const now=Date.now();
+  RACES.forEach(race=>{
+    const rt=new Date(race.rt).getTime(),diff=rt-now,key=`f1_n_${race.round}`;
+    if(diff>0&&diff<=65*60000&&diff>55*60000&&!localStorage.getItem(key+'_1h')){
+      new Notification('🏁 F1 比賽 1 小時後開始！',{body:`${race.name}\n台灣時間 ${twT(race.rt)}`,tag:'f1'});
+      localStorage.setItem(key+'_1h','1');
+    }
+  });
+}
+
+// ==================== INIT ====================
+renderSchedule();
+if(localStorage.getItem('f1_notify')==='true'){
+  const btn=document.getElementById('notifyBtn');
+  btn.style.background='var(--red)';btn.style.color='#fff';btn.style.borderColor='var(--red)';
+  btn.textContent='通知已開啟';
+  registerNotifyCheck();
+}
+if(RACES.some(r=>isLive(r))) document.querySelector('[data-view="v-track"]').click();
+
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
