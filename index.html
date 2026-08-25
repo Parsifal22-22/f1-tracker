@@ -152,10 +152,16 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 <div class="view" id="v-track">
   <div class="track-wrap">
     <div class="track-top">
-      <div class="track-title" id="trackTitle">賽道即時</div>
-      <div class="track-status off" id="trackStatus">等待比賽</div>
+      <div class="track-title" id="trackTitle">賽道回放</div>
+      <div class="track-status off" id="trackStatus">載入中</div>
     </div>
     <div class="lap-bar"><span id="lapText">等待中</span><strong id="lapNum"></strong></div>
+    <div id="replayBar" style="display:none;padding:8px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+      <div style="flex:1;background:var(--surface2);height:4px;border-radius:2px;overflow:hidden;position:relative">
+        <div id="replayProgress" style="height:100%;background:var(--red);width:0%;border-radius:2px;transition:width .3s"></div>
+      </div>
+      <span id="replayTime" style="font-size:11px;color:var(--text3);min-width:40px;text-align:right">0%</span>
+    </div>
     <div class="track-canvas-box"><canvas id="trackCanvas"></canvas></div>
   </div>
   <div class="lb-card">
@@ -358,29 +364,10 @@ function startCD(race){
   upd();cdTimer=setInterval(upd,1000);
 }
 
-// ==================== OPENF1 LIVE DATA ====================
-let livePositions=[];
-let liveDataOk=false;
-
-async function fetchLiveData(){
-  try{
-    const r=await fetch('https://api.openf1.org/v1/position?session_key=latest');
-    if(!r.ok) throw 0;
-    const arr=await r.json();
-    if(!arr.length) throw 0;
-    const latest={};
-    arr.forEach(p=>{
-      if(!latest[p.driver_number]||new Date(p.date)>new Date(latest[p.driver_number].date))
-        latest[p.driver_number]=p;
-    });
-    livePositions=Object.values(latest).filter(p=>p.position).sort((a,b)=>a.position-b.position).map(p=>({num:p.driver_number,pos:p.position}));
-    liveDataOk=true;
-    return true;
-  }catch(e){liveDataOk=false;return false}
-}
-
-// ==================== CANVAS TRACK ====================
-let tCanvas,tCtx,curRace=null,animId=null,liveInterval=null;
+// ==================== REPLAY SYSTEM ====================
+let tCanvas,tCtx,animId=null;
+let replayData=null; // {sessionName, snapshots:[{t, positions:[{num,pos}]}], totalLaps, raceName, trackRound}
+const REPLAY_DURATION=120; // replay entire race in 120 seconds
 
 function getP(pts,t){
   t=((t%1)+1)%1;const n=pts.length,idx=t*n,i0=Math.floor(idx)%n,i1=(i0+1)%n,f=idx-Math.floor(idx);
@@ -389,7 +376,143 @@ function getP(pts,t){
   return[cr(pts[im][0],pts[i0][0],pts[i1][0],pts[i2][0]),cr(pts[im][1],pts[i0][1],pts[i1][1],pts[i2][1])]
 }
 
-function initTrack(){
+function lastCompletedRace(){
+  const now=new Date();
+  let last=null;
+  for(const r of RACES){
+    const end=new Date(r.rt).getTime()+9e6;
+    if(end<now.getTime()) last=r;
+  }
+  return last;
+}
+
+async function fetchReplayData(){
+  try{
+    // Get latest completed race session from OpenF1
+    const sessRes=await fetch('https://api.openf1.org/v1/sessions?session_type=Race&year=2026');
+    let sessions=[];
+    if(sessRes.ok) sessions=await sessRes.json();
+
+    // Find the most recent completed race session
+    let sessionKey=null, sessInfo=null;
+    if(sessions.length){
+      const now=Date.now();
+      const completed=sessions.filter(s=>s.date_end&&new Date(s.date_end).getTime()<now);
+      if(completed.length){
+        sessInfo=completed[completed.length-1];
+        sessionKey=sessInfo.session_key;
+      }
+    }
+
+    // If no 2026 sessions yet, try latest available
+    if(!sessionKey){
+      const fallback=await fetch('https://api.openf1.org/v1/sessions?session_type=Race&year=2025');
+      if(fallback.ok){
+        const fb=await fallback.json();
+        const now=Date.now();
+        const completed=fb.filter(s=>s.date_end&&new Date(s.date_end).getTime()<now);
+        if(completed.length){
+          sessInfo=completed[completed.length-1];
+          sessionKey=sessInfo.session_key;
+        }
+      }
+    }
+
+    if(!sessionKey) return null;
+
+    // Fetch all position changes for this session
+    const posRes=await fetch(`https://api.openf1.org/v1/position?session_key=${sessionKey}`);
+    if(!posRes.ok) return null;
+    const posArr=await posRes.json();
+    if(!posArr.length) return null;
+
+    // Build time-ordered snapshots
+    // Group by timestamp, build position state over time
+    const timeSet=new Set();
+    posArr.forEach(p=>timeSet.add(p.date));
+    const times=[...timeSet].sort();
+    const startT=new Date(times[0]).getTime();
+    const endT=new Date(times[times.length-1]).getTime();
+    const totalDuration=endT-startT;
+
+    // Build cumulative state
+    const state={};
+    const snapshots=[];
+    let snapIdx=0;
+    // Sample ~200 snapshots across the race
+    const sampleInterval=Math.max(1,Math.floor(times.length/200));
+
+    posArr.forEach((p,i)=>{
+      state[p.driver_number]=p.position;
+    });
+
+    // Re-process building snapshots properly
+    const state2={};
+    let lastSnapTime=-Infinity;
+    const minGap=totalDuration/200;
+
+    posArr.forEach(p=>{
+      state2[p.driver_number]=p.position;
+      const pTime=new Date(p.date).getTime();
+      if(pTime-lastSnapTime>=minGap){
+        const positions=Object.entries(state2)
+          .filter(([_,pos])=>pos)
+          .map(([num,pos])=>({num:parseInt(num),pos}))
+          .sort((a,b)=>a.pos-b.pos);
+        snapshots.push({
+          t:(pTime-startT)/totalDuration,
+          positions
+        });
+        lastSnapTime=pTime;
+      }
+    });
+
+    // Final snapshot
+    const finalPositions=Object.entries(state2)
+      .filter(([_,pos])=>pos)
+      .map(([num,pos])=>({num:parseInt(num),pos}))
+      .sort((a,b)=>a.pos-b.pos);
+    if(!snapshots.length||snapshots[snapshots.length-1].t<1){
+      snapshots.push({t:1,positions:finalPositions});
+    }
+
+    // Find matching race
+    const raceName=sessInfo.meeting_name||sessInfo.circuit_short_name||'上一場比賽';
+    let trackRound=1;
+    if(sessInfo.circuit_short_name){
+      const cn=sessInfo.circuit_short_name.toLowerCase();
+      const match=RACES.find(r=>r.circuit.toLowerCase().includes(cn)||cn.includes(r.circuit.toLowerCase().split(' ')[0]));
+      if(match) trackRound=match.round;
+    }
+    // Also try meeting name
+    if(trackRound===1&&sessInfo.meeting_name){
+      const mn=sessInfo.meeting_name.toLowerCase();
+      const match=RACES.find(r=>r.name.includes(sessInfo.country_name)||mn.includes(r.loc.toLowerCase()));
+      if(match) trackRound=match.round;
+    }
+
+    const totalLaps=RACES.find(r=>r.round===trackRound)?.laps||55;
+
+    return {sessionName:raceName,snapshots,totalLaps,trackRound,finalPositions};
+  }catch(e){
+    console.error('Replay fetch error:',e);
+    return null;
+  }
+}
+
+function getPositionsAtTime(t){
+  if(!replayData||!replayData.snapshots.length) return DRIVERS.map((d,i)=>({num:d.n,pos:i+1}));
+  const snaps=replayData.snapshots;
+  // Find the snapshot closest to time t
+  let best=snaps[0];
+  for(const s of snaps){
+    if(s.t<=t) best=s;
+    else break;
+  }
+  return best.positions;
+}
+
+async function initTrack(){
   tCanvas=document.getElementById('trackCanvas');
   tCtx=tCanvas.getContext('2d');
   const box=tCanvas.parentElement;
@@ -397,60 +520,82 @@ function initTrack(){
   tCanvas.height=box.clientHeight*devicePixelRatio;
   tCtx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
 
-  const lr=RACES.find(r=>isLive(r));
-  const race=lr||nextRace()||RACES[0];
-  curRace=race;
-  document.getElementById('trackTitle').textContent=`${race.flag} ${race.circuit}`;
+  document.getElementById('trackStatus').className='track-status off';
+  document.getElementById('trackStatus').textContent='載入中...';
+  document.getElementById('refreshDot').classList.remove('live');
 
-  if(lr){
+  // Try to fetch real replay data
+  replayData=await fetchReplayData();
+
+  if(replayData){
+    const race=RACES.find(r=>r.round===replayData.trackRound)||RACES[0];
+    document.getElementById('trackTitle').textContent=`${race.flag} ${replayData.sessionName} 回放`;
     document.getElementById('trackStatus').className='track-status on';
-    document.getElementById('trackStatus').textContent='LIVE';
+    document.getElementById('trackStatus').textContent='回放中';
     document.getElementById('refreshDot').classList.add('live');
-    startLiveMode(race);
+    document.getElementById('replayBar').style.display='flex';
+    startReplay(race);
   } else {
-    document.getElementById('trackStatus').className='track-status off';
-    document.getElementById('trackStatus').textContent='模擬展示';
-    document.getElementById('refreshDot').classList.remove('live');
-    startSimMode(race);
+    // Fallback: use last completed race with default driver order
+    const race=lastCompletedRace()||nextRace()||RACES[0];
+    document.getElementById('trackTitle').textContent=`${race.flag} ${race.name}`;
+    document.getElementById('trackStatus').textContent='模擬回放';
+    document.getElementById('replayBar').style.display='flex';
+    startFallbackReplay(race);
   }
 }
 
-function startSimMode(race){
+function startReplay(race){
   if(animId)cancelAnimationFrame(animId);
-  if(liveInterval)clearInterval(liveInterval);
   const pts=TRACKS[race.round]||TRACKS[1];
   const t0=performance.now();
+
   function frame(ts){
-    drawFrame(race,pts,(ts-t0)/1000,false);
-    animId=requestAnimationFrame(frame);
-  }
-  animId=requestAnimationFrame(frame);
-  renderLeaderboard(DRIVERS.map((d,i)=>({num:d.n,pos:i+1})),false);
-}
+    const elapsed=(ts-t0)/1000;
+    const progress=(elapsed%REPLAY_DURATION)/REPLAY_DURATION; // 0-1, loops
+    const lap=Math.min(Math.floor(progress*replayData.totalLaps)+1,replayData.totalLaps);
 
-async function startLiveMode(race){
-  if(animId)cancelAnimationFrame(animId);
-  if(liveInterval)clearInterval(liveInterval);
-  const pts=TRACKS[race.round]||TRACKS[1];
+    // Update progress bar
+    document.getElementById('replayProgress').style.width=`${progress*100}%`;
+    document.getElementById('replayTime').textContent=`${Math.floor(progress*100)}%`;
+    document.getElementById('lapText').textContent=race.circuit;
+    document.getElementById('lapNum').textContent=`Lap ${lap}/${replayData.totalLaps}`;
 
-  await fetchLiveData();
-  renderLeaderboard(livePositions.length?livePositions:DRIVERS.map((d,i)=>({num:d.n,pos:i+1})),true);
+    // Get positions at this point in the race
+    const positions=getPositionsAtTime(progress);
+    renderLeaderboard(positions);
 
-  liveInterval=setInterval(async()=>{
-    await fetchLiveData();
-    renderLeaderboard(livePositions.length?livePositions:DRIVERS.map((d,i)=>({num:d.n,pos:i+1})),true);
-  },5000);
-
-  const t0=performance.now();
-  function frame(ts){
-    drawFrame(race,pts,(ts-t0)/1000,true);
+    drawTrackFrame(tCtx,tCanvas,pts,positions,progress*replayData.totalLaps);
     animId=requestAnimationFrame(frame);
   }
   animId=requestAnimationFrame(frame);
 }
 
-function drawFrame(race,pts,elapsed,isLiveMode){
-  const w=tCanvas.width/devicePixelRatio,h=tCanvas.height/devicePixelRatio,ctx=tCtx;
+function startFallbackReplay(race){
+  if(animId)cancelAnimationFrame(animId);
+  const pts=TRACKS[race.round]||TRACKS[1];
+  const t0=performance.now();
+  const defaultPos=DRIVERS.map((d,i)=>({num:d.n,pos:i+1}));
+  renderLeaderboard(defaultPos);
+
+  function frame(ts){
+    const elapsed=(ts-t0)/1000;
+    const progress=(elapsed%REPLAY_DURATION)/REPLAY_DURATION;
+    const lap=Math.min(Math.floor(progress*race.laps)+1,race.laps);
+
+    document.getElementById('replayProgress').style.width=`${progress*100}%`;
+    document.getElementById('replayTime').textContent=`${Math.floor(progress*100)}%`;
+    document.getElementById('lapText').textContent=race.circuit;
+    document.getElementById('lapNum').textContent=`Lap ${lap}/${race.laps}`;
+
+    drawTrackFrame(tCtx,tCanvas,pts,defaultPos,progress*race.laps);
+    animId=requestAnimationFrame(frame);
+  }
+  animId=requestAnimationFrame(frame);
+}
+
+function drawTrackFrame(ctx,canvas,pts,positions,lapProgress){
+  const w=canvas.width/devicePixelRatio,h=canvas.height/devicePixelRatio;
   ctx.clearRect(0,0,w,h);
 
   const pad=36,tw2=w-pad*2,th=h-pad*2;
@@ -461,15 +606,12 @@ function drawFrame(race,pts,elapsed,isLiveMode){
   ctx.strokeStyle='#333';ctx.lineWidth=24;ctx.stroke();
   ctx.setLineDash([4,8]);ctx.strokeStyle='#444';ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
 
+  // S/F line
   const[sx,sy]=getP(pts,0);
   ctx.fillStyle='#fff';ctx.fillRect(pad+sx*tw2-1.5,pad+sy*th-16,3,32);
 
-  const leaderT=(elapsed*0.012)%1;
-  const lapEst=Math.min(Math.floor(elapsed/85)+1,race.laps);
-  document.getElementById('lapText').textContent=race.circuit;
-  document.getElementById('lapNum').textContent=`Lap ${lapEst}/${race.laps}`;
-
-  const positions=isLiveMode&&livePositions.length?livePositions:DRIVERS.map((d,i)=>({num:d.n,pos:i+1}));
+  // Cars - leader position based on lap progress
+  const leaderT=(lapProgress*0.15)%1;
   positions.forEach(lp=>{
     const drv=driverByNum(lp.num);
     if(!drv)return;
@@ -490,9 +632,17 @@ function drawFrame(race,pts,elapsed,isLiveMode){
   });
 }
 
-function renderLeaderboard(positions,isLive){
+function renderLeaderboard(positions){
   document.getElementById('leaderboard').innerHTML=positions.map(lp=>{
-    const d=driverByNum(lp.num);if(!d)return'';
+    const d=driverByNum(lp.num);
+    if(!d){
+      // Driver not in our list - show number only
+      return `<div class="lb-row">
+        <div class="lb-pos">${lp.pos}</div>
+        <div class="lb-color" style="background:#666"></div>
+        <div class="lb-info"><div class="lb-name">#${lp.num}</div><div class="lb-team">-</div></div>
+      </div>`;
+    }
     const pc=lp.pos<=3?` p${lp.pos}`:'';
     return `<div class="lb-row">
       <div class="lb-pos${pc}">${lp.pos}</div>
@@ -602,7 +752,7 @@ if(localStorage.getItem('f1_notify')==='true'){
   btn.textContent='通知已開啟';
   registerNotifyCheck();
 }
-if(RACES.some(r=>isLive(r))) document.querySelector('[data-view="v-track"]').click();
+// No auto-switch to track - user opens it manually
 
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
