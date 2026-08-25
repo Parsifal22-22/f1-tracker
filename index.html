@@ -122,6 +122,32 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .setting-label{font-size:14px;font-weight:600}
 .setting-desc{font-size:11px;color:var(--text3);margin-top:2px}
 
+/* Tire compounds */
+.tire{display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid;flex-shrink:0;margin-left:auto}
+.tire.SOFT{border-color:#E10600;background:rgba(225,6,0,0.2)}
+.tire.MEDIUM{border-color:#FFD700;background:rgba(255,215,0,0.2)}
+.tire.HARD{border-color:#E8E8EC;background:rgba(232,232,236,0.15)}
+.tire.INTERMEDIATE{border-color:#00C853;background:rgba(0,200,83,0.2)}
+.tire.WET{border-color:#00B0FF;background:rgba(0,176,255,0.2)}
+.lb-row .dnf-tag{font-size:9px;color:var(--red);font-weight:700;margin-left:auto}
+
+/* Event toast */
+.event-toast-container{position:absolute;top:10px;left:10px;right:10px;z-index:10;display:flex;flex-direction:column;gap:4px;pointer-events:none}
+.event-toast{padding:6px 12px;border-radius:8px;font-size:11px;font-weight:600;animation:toastIn .3s ease-out,toastOut .5s 3s ease-in forwards;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.event-toast.pit{background:rgba(255,255,255,0.1);color:var(--text);backdrop-filter:blur(8px)}
+.event-toast.yellow{background:rgba(255,215,0,0.25);color:#FFD700;border:1px solid rgba(255,215,0,0.3)}
+.event-toast.red{background:rgba(225,6,0,0.25);color:#ff4444;border:1px solid rgba(225,6,0,0.3)}
+.event-toast.sc{background:rgba(255,165,0,0.2);color:#FFA500;border:1px solid rgba(255,165,0,0.3)}
+.event-toast.dnf{background:rgba(225,6,0,0.15);color:var(--red);border:1px solid rgba(225,6,0,0.2)}
+@keyframes toastIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toastOut{from{opacity:1}to{opacity:0}}
+
+/* Flag overlay */
+.flag-overlay{position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;border-radius:0 0 16px 16px;transition:background .5s}
+.flag-overlay.yellow{background:rgba(255,215,0,0.06)}
+.flag-overlay.red{background:rgba(225,6,0,0.08)}
+.flag-overlay.sc{background:rgba(255,165,0,0.06)}
+
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
@@ -162,7 +188,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
       </div>
       <span id="replayTime" style="font-size:11px;color:var(--text3);min-width:40px;text-align:right">0%</span>
     </div>
-    <div class="track-canvas-box"><canvas id="trackCanvas"></canvas></div>
+    <div class="track-canvas-box">
+      <canvas id="trackCanvas"></canvas>
+      <div class="flag-overlay" id="flagOverlay"></div>
+      <div class="event-toast-container" id="toastContainer"></div>
+    </div>
   </div>
   <div class="lb-card">
     <div class="lb-header">
@@ -366,8 +396,8 @@ function startCD(race){
 
 // ==================== REPLAY SYSTEM ====================
 let tCanvas,tCtx,animId=null;
-let replayData=null; // {sessionName, snapshots:[{t, positions:[{num,pos}]}], totalLaps, raceName, trackRound}
-const REPLAY_DURATION=120; // replay entire race in 120 seconds
+let replayData=null;
+const REPLAY_DURATION=300;
 
 function getP(pts,t){
   t=((t%1)+1)%1;const n=pts.length,idx=t*n,i0=Math.floor(idx)%n,i1=(i0+1)%n,f=idx-Math.floor(idx);
@@ -377,123 +407,186 @@ function getP(pts,t){
 }
 
 function lastCompletedRace(){
-  const now=new Date();
+  const now=Date.now();
   let last=null;
-  for(const r of RACES){
-    const end=new Date(r.rt).getTime()+9e6;
-    if(end<now.getTime()) last=r;
-  }
+  for(const r of RACES){ if(new Date(r.rt).getTime()+9e6<now) last=r; }
   return last;
 }
 
+// Toast system
+let shownToasts=new Set();
+function showToast(id,text,type){
+  if(shownToasts.has(id))return;
+  shownToasts.add(id);
+  const c=document.getElementById('toastContainer');
+  const el=document.createElement('div');
+  el.className=`event-toast ${type}`;
+  el.textContent=text;
+  c.appendChild(el);
+  setTimeout(()=>el.remove(),3500);
+  // Limit visible toasts
+  while(c.children.length>4) c.firstChild.remove();
+}
+
+function clearToasts(){
+  shownToasts.clear();
+  document.getElementById('toastContainer').innerHTML='';
+}
+
+// Tire compound colors for canvas
+const TIRE_COLORS={SOFT:'#E10600',MEDIUM:'#FFD700',HARD:'#E8E8EC',INTERMEDIATE:'#00C853',WET:'#00B0FF'};
+
 async function fetchReplayData(){
   try{
-    // Get latest completed race session from OpenF1
-    const sessRes=await fetch('https://api.openf1.org/v1/sessions?session_type=Race&year=2026');
-    let sessions=[];
-    if(sessRes.ok) sessions=await sessRes.json();
-
-    // Find the most recent completed race session
-    let sessionKey=null, sessInfo=null;
-    if(sessions.length){
+    // Find latest completed race session
+    let sessionKey=null,sessInfo=null;
+    for(const year of[2026,2025]){
+      const r=await fetch(`https://api.openf1.org/v1/sessions?session_type=Race&year=${year}`);
+      if(!r.ok) continue;
+      const sessions=await r.json();
       const now=Date.now();
       const completed=sessions.filter(s=>s.date_end&&new Date(s.date_end).getTime()<now);
       if(completed.length){
         sessInfo=completed[completed.length-1];
         sessionKey=sessInfo.session_key;
+        break;
       }
     }
-
-    // If no 2026 sessions yet, try latest available
-    if(!sessionKey){
-      const fallback=await fetch('https://api.openf1.org/v1/sessions?session_type=Race&year=2025');
-      if(fallback.ok){
-        const fb=await fallback.json();
-        const now=Date.now();
-        const completed=fb.filter(s=>s.date_end&&new Date(s.date_end).getTime()<now);
-        if(completed.length){
-          sessInfo=completed[completed.length-1];
-          sessionKey=sessInfo.session_key;
-        }
-      }
-    }
-
     if(!sessionKey) return null;
 
-    // Fetch all position changes for this session
-    const posRes=await fetch(`https://api.openf1.org/v1/position?session_key=${sessionKey}`);
-    if(!posRes.ok) return null;
-    const posArr=await posRes.json();
+    // Fetch with retry helper to handle 429 rate limiting
+    async function fetchRetry(url,retries=2){
+      for(let i=0;i<=retries;i++){
+        const r=await fetch(url);
+        if(r.ok) return r.json();
+        if(r.status===429&&i<retries){await new Promise(ok=>setTimeout(ok,1500*(i+1)));continue;}
+        return [];
+      }
+      return [];
+    }
+
+    // Fetch position first, then others with small delays to avoid 429
+    const posArr=await fetchRetry(`https://api.openf1.org/v1/position?session_key=${sessionKey}`);
     if(!posArr.length) return null;
+    await new Promise(ok=>setTimeout(ok,300));
+    const [pitArr,stintArr]=await Promise.all([
+      fetchRetry(`https://api.openf1.org/v1/pit?session_key=${sessionKey}`),
+      fetchRetry(`https://api.openf1.org/v1/stints?session_key=${sessionKey}`)
+    ]);
+    await new Promise(ok=>setTimeout(ok,300));
+    const rcArr=await fetchRetry(`https://api.openf1.org/v1/race_control?session_key=${sessionKey}`);
 
-    // Build time-ordered snapshots
-    // Group by timestamp, build position state over time
-    const timeSet=new Set();
-    posArr.forEach(p=>timeSet.add(p.date));
-    const times=[...timeSet].sort();
-    const startT=new Date(times[0]).getTime();
-    const endT=new Date(times[times.length-1]).getTime();
-    const totalDuration=endT-startT;
+    // Compute time range
+    const allTimes=posArr.map(p=>new Date(p.date).getTime());
+    const startT=Math.min(...allTimes),endT=Math.max(...allTimes);
+    const totalDuration=endT-startT||1;
+    const toT=ms=>(ms-startT)/totalDuration;
 
-    // Build cumulative state
+    // Pre-populate state: scan all position data to find all drivers and their initial positions
     const state={};
+    posArr.forEach(p=>{state[p.driver_number]=p.position;});
+    // Save final state, then reset and rebuild with full initial grid
+    const finalState={...state};
+    // Find the initial grid (first occurrence of each driver)
+    const initState={};
+    posArr.forEach(p=>{if(!initState[p.driver_number])initState[p.driver_number]=p.position;});
+
+    // Rebuild snapshots with all drivers present from the start
+    Object.assign(state,initState);
     const snapshots=[];
-    let snapIdx=0;
-    // Sample ~200 snapshots across the race
-    const sampleInterval=Math.max(1,Math.floor(times.length/200));
-
-    posArr.forEach((p,i)=>{
-      state[p.driver_number]=p.position;
-    });
-
-    // Re-process building snapshots properly
-    const state2={};
     let lastSnapTime=-Infinity;
-    const minGap=totalDuration/200;
+    const minGap=totalDuration/300;
 
+    // First snapshot: starting grid
+    const gridPositions=Object.entries(initState).map(([num,pos])=>({num:parseInt(num),pos})).sort((a,b)=>a.pos-b.pos);
+    snapshots.push({t:0,positions:gridPositions});
+
+    // Replay through position changes
+    const state2={...initState};
     posArr.forEach(p=>{
       state2[p.driver_number]=p.position;
       const pTime=new Date(p.date).getTime();
       if(pTime-lastSnapTime>=minGap){
-        const positions=Object.entries(state2)
-          .filter(([_,pos])=>pos)
-          .map(([num,pos])=>({num:parseInt(num),pos}))
-          .sort((a,b)=>a.pos-b.pos);
         snapshots.push({
-          t:(pTime-startT)/totalDuration,
-          positions
+          t:toT(pTime),
+          positions:Object.entries(state2).filter(([_,pos])=>pos).map(([num,pos])=>({num:parseInt(num),pos})).sort((a,b)=>a.pos-b.pos)
         });
         lastSnapTime=pTime;
       }
     });
+    const finalPositions=Object.entries(finalState).filter(([_,pos])=>pos).map(([num,pos])=>({num:parseInt(num),pos})).sort((a,b)=>a.pos-b.pos);
+    if(!snapshots.length||snapshots[snapshots.length-1].t<1) snapshots.push({t:1,positions:finalPositions});
 
-    // Final snapshot
-    const finalPositions=Object.entries(state2)
-      .filter(([_,pos])=>pos)
-      .map(([num,pos])=>({num:parseInt(num),pos}))
-      .sort((a,b)=>a.pos-b.pos);
-    if(!snapshots.length||snapshots[snapshots.length-1].t<1){
-      snapshots.push({t:1,positions:finalPositions});
-    }
+    // Build pit stop events [{t, num, compound, duration}]
+    const pits=pitArr.map(p=>{
+      const d=driverByNum(p.driver_number);
+      let dur=p.pit_duration;
+      if(dur&&dur>100) dur=dur/1000; // likely milliseconds
+      return {
+        t:toT(new Date(p.date).getTime()),
+        num:p.driver_number,
+        name:d?d.a:`#${p.driver_number}`,
+        duration:dur?dur.toFixed(1):null
+      };
+    }).filter(p=>p.t>=0&&p.t<=1);
 
-    // Find matching race
-    const raceName=sessInfo.meeting_name||sessInfo.circuit_short_name||'上一場比賽';
+    // Build stint data (tire compounds per driver over time)
+    // stintArr: [{driver_number, lap_start, lap_end, compound, ...}]
+    const stints={};
+    stintArr.forEach(s=>{
+      if(!stints[s.driver_number]) stints[s.driver_number]=[];
+      stints[s.driver_number].push({
+        lapStart:s.lap_start||0,
+        lapEnd:s.lap_end||999,
+        compound:(s.compound||'').toUpperCase()
+      });
+    });
+
+    // Build race control events [{t, type, msg}]
+    const flags=[];
+    const dnfDrivers=new Set();
+    rcArr.forEach(rc=>{
+      const t=toT(new Date(rc.date).getTime());
+      if(t<0||t>1) return;
+      const msg=rc.message||'';
+      const cat=rc.category||'';
+      const flag=rc.flag||'';
+
+      if(flag==='YELLOW'||cat==='Flag'&&msg.includes('YELLOW')){
+        flags.push({t,type:'yellow',msg:`🟡 黃旗${rc.sector?` S${rc.sector}`:''}`});
+      } else if(flag==='RED'||msg.includes('RED FLAG')){
+        flags.push({t,type:'red',msg:'🔴 紅旗 — 比賽暫停'});
+      } else if(flag==='GREEN'&&msg.includes('CLEAR')){
+        flags.push({t,type:'green',msg:'🟢 綠旗 — 恢復比賽'});
+      } else if(msg.includes('SAFETY CAR')||cat==='SafetyCar'){
+        if(msg.includes('VIRTUAL')){
+          flags.push({t,type:'sc',msg:'🟡 VSC 虛擬安全車'});
+        } else {
+          flags.push({t,type:'sc',msg:'🟡 安全車出動'});
+        }
+      } else if(msg.includes('RETIRED')||msg.includes('STOPPED')){
+        const numMatch=msg.match(/(\d+)/);
+        if(numMatch) dnfDrivers.add(parseInt(numMatch[1]));
+        const d=numMatch?driverByNum(parseInt(numMatch[1])):null;
+        flags.push({t,type:'dnf',msg:`❌ ${d?d.a:'#'+numMatch?.[1]} 退賽`});
+      }
+    });
+
+    // Match to our race data
     let trackRound=1;
-    if(sessInfo.circuit_short_name){
-      const cn=sessInfo.circuit_short_name.toLowerCase();
-      const match=RACES.find(r=>r.circuit.toLowerCase().includes(cn)||cn.includes(r.circuit.toLowerCase().split(' ')[0]));
-      if(match) trackRound=match.round;
+    const cn=(sessInfo.circuit_short_name||'').toLowerCase();
+    const mn=(sessInfo.meeting_name||'').toLowerCase();
+    const country=(sessInfo.country_name||'').toLowerCase();
+    for(const r of RACES){
+      const rc=r.circuit.toLowerCase(),rl=r.loc.toLowerCase();
+      if(rc.includes(cn)||cn.includes(rc.split(' ')[0])||mn.includes(rl)||r.name.includes(sessInfo.country_name||'XXXX')){
+        trackRound=r.round;break;
+      }
     }
-    // Also try meeting name
-    if(trackRound===1&&sessInfo.meeting_name){
-      const mn=sessInfo.meeting_name.toLowerCase();
-      const match=RACES.find(r=>r.name.includes(sessInfo.country_name)||mn.includes(r.loc.toLowerCase()));
-      if(match) trackRound=match.round;
-    }
-
     const totalLaps=RACES.find(r=>r.round===trackRound)?.laps||55;
+    const raceName=sessInfo.meeting_name||sessInfo.circuit_short_name||'上一場比賽';
 
-    return {sessionName:raceName,snapshots,totalLaps,trackRound,finalPositions};
+    return {sessionName:raceName,snapshots,totalLaps,trackRound,finalPositions,pits,stints,flags,dnfDrivers};
   }catch(e){
     console.error('Replay fetch error:',e);
     return null;
@@ -502,14 +595,31 @@ async function fetchReplayData(){
 
 function getPositionsAtTime(t){
   if(!replayData||!replayData.snapshots.length) return DRIVERS.map((d,i)=>({num:d.n,pos:i+1}));
-  const snaps=replayData.snapshots;
-  // Find the snapshot closest to time t
-  let best=snaps[0];
-  for(const s of snaps){
-    if(s.t<=t) best=s;
-    else break;
+  let best=replayData.snapshots[0];
+  for(const s of replayData.snapshots){
+    if(s.t<=t) best=s; else break;
   }
   return best.positions;
+}
+
+function getTireAtLap(driverNum,lap){
+  if(!replayData||!replayData.stints||!replayData.stints[driverNum]) return null;
+  const stints=replayData.stints[driverNum];
+  for(let i=stints.length-1;i>=0;i--){
+    if(lap>=stints[i].lapStart) return stints[i].compound;
+  }
+  return stints[0]?.compound||null;
+}
+
+function getActiveFlag(t){
+  if(!replayData||!replayData.flags) return null;
+  let active=null;
+  for(const f of replayData.flags){
+    if(f.t>t) break;
+    if(f.type==='yellow'||f.type==='red'||f.type==='sc') active=f;
+    if(f.type==='green') active=null;
+  }
+  return active;
 }
 
 async function initTrack(){
@@ -524,7 +634,6 @@ async function initTrack(){
   document.getElementById('trackStatus').textContent='載入中...';
   document.getElementById('refreshDot').classList.remove('live');
 
-  // Try to fetch real replay data
   replayData=await fetchReplayData();
 
   if(replayData){
@@ -536,7 +645,6 @@ async function initTrack(){
     document.getElementById('replayBar').style.display='flex';
     startReplay(race);
   } else {
-    // Fallback: use last completed race with default driver order
     const race=lastCompletedRace()||nextRace()||RACES[0];
     document.getElementById('trackTitle').textContent=`${race.flag} ${race.name}`;
     document.getElementById('trackStatus').textContent='模擬回放';
@@ -547,25 +655,46 @@ async function initTrack(){
 
 function startReplay(race){
   if(animId)cancelAnimationFrame(animId);
+  clearToasts();
   const pts=TRACKS[race.round]||TRACKS[1];
   const t0=performance.now();
+  let lastLb=-1;
 
   function frame(ts){
     const elapsed=(ts-t0)/1000;
-    const progress=(elapsed%REPLAY_DURATION)/REPLAY_DURATION; // 0-1, loops
+    const progress=(elapsed%REPLAY_DURATION)/REPLAY_DURATION;
     const lap=Math.min(Math.floor(progress*replayData.totalLaps)+1,replayData.totalLaps);
 
-    // Update progress bar
+    // Reset toasts on loop
+    if(progress<0.01&&shownToasts.size>0) clearToasts();
+
+    // Progress bar
     document.getElementById('replayProgress').style.width=`${progress*100}%`;
-    document.getElementById('replayTime').textContent=`${Math.floor(progress*100)}%`;
+    document.getElementById('replayTime').textContent=`Lap ${lap}`;
     document.getElementById('lapText').textContent=race.circuit;
-    document.getElementById('lapNum').textContent=`Lap ${lap}/${replayData.totalLaps}`;
+    document.getElementById('lapNum').textContent=`${lap}/${replayData.totalLaps}`;
 
-    // Get positions at this point in the race
+    // Show events
+    replayData.pits.forEach((p,i)=>{
+      if(progress>=p.t&&progress-p.t<0.005) showToast(`pit${i}`,`🔧 ${p.name} 進站${p.duration?` (${p.duration}s)`:''}`, 'pit');
+    });
+    replayData.flags.forEach((f,i)=>{
+      if(progress>=f.t&&progress-f.t<0.005) showToast(`flag${i}`,f.msg,f.type);
+    });
+
+    // Flag overlay
+    const activeFlag=getActiveFlag(progress);
+    const overlay=document.getElementById('flagOverlay');
+    overlay.className='flag-overlay'+(activeFlag?` ${activeFlag.type}`:'');
+
+    // Positions + leaderboard (update every ~0.5s)
     const positions=getPositionsAtTime(progress);
-    renderLeaderboard(positions);
+    if(Math.floor(elapsed*2)!==lastLb){
+      renderLeaderboard(positions,lap);
+      lastLb=Math.floor(elapsed*2);
+    }
 
-    drawTrackFrame(tCtx,tCanvas,pts,positions,progress*replayData.totalLaps);
+    drawTrackFrame(tCtx,tCanvas,pts,positions,progress*replayData.totalLaps,lap);
     animId=requestAnimationFrame(frame);
   }
   animId=requestAnimationFrame(frame);
@@ -573,10 +702,11 @@ function startReplay(race){
 
 function startFallbackReplay(race){
   if(animId)cancelAnimationFrame(animId);
+  clearToasts();
   const pts=TRACKS[race.round]||TRACKS[1];
   const t0=performance.now();
   const defaultPos=DRIVERS.map((d,i)=>({num:d.n,pos:i+1}));
-  renderLeaderboard(defaultPos);
+  renderLeaderboard(defaultPos,1);
 
   function frame(ts){
     const elapsed=(ts-t0)/1000;
@@ -584,17 +714,17 @@ function startFallbackReplay(race){
     const lap=Math.min(Math.floor(progress*race.laps)+1,race.laps);
 
     document.getElementById('replayProgress').style.width=`${progress*100}%`;
-    document.getElementById('replayTime').textContent=`${Math.floor(progress*100)}%`;
+    document.getElementById('replayTime').textContent=`Lap ${lap}`;
     document.getElementById('lapText').textContent=race.circuit;
-    document.getElementById('lapNum').textContent=`Lap ${lap}/${race.laps}`;
+    document.getElementById('lapNum').textContent=`${lap}/${race.laps}`;
 
-    drawTrackFrame(tCtx,tCanvas,pts,defaultPos,progress*race.laps);
+    drawTrackFrame(tCtx,tCanvas,pts,defaultPos,progress*race.laps,lap);
     animId=requestAnimationFrame(frame);
   }
   animId=requestAnimationFrame(frame);
 }
 
-function drawTrackFrame(ctx,canvas,pts,positions,lapProgress){
+function drawTrackFrame(ctx,canvas,pts,positions,lapProgress,currentLap){
   const w=canvas.width/devicePixelRatio,h=canvas.height/devicePixelRatio;
   ctx.clearRect(0,0,w,h);
 
@@ -606,20 +736,26 @@ function drawTrackFrame(ctx,canvas,pts,positions,lapProgress){
   ctx.strokeStyle='#333';ctx.lineWidth=24;ctx.stroke();
   ctx.setLineDash([4,8]);ctx.strokeStyle='#444';ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([]);
 
-  // S/F line
   const[sx,sy]=getP(pts,0);
   ctx.fillStyle='#fff';ctx.fillRect(pad+sx*tw2-1.5,pad+sy*th-16,3,32);
 
-  // Cars - leader position based on lap progress
   const leaderT=(lapProgress*0.15)%1;
+  const isDNF=num=>replayData&&replayData.dnfDrivers&&replayData.dnfDrivers.has(num);
+
   positions.forEach(lp=>{
     const drv=driverByNum(lp.num);
     if(!drv)return;
+    // Skip DNF drivers from track (they're parked)
+    if(isDNF(lp.num)) return;
     const gap=(lp.pos-1)*0.032;
     const t=leaderT-gap;
     const[cx,cy]=getP(pts,t);
     const x=pad+cx*tw2,y=pad+cy*th;
     const col=TC[drv.t]||'#666';
+
+    // Tire dot
+    const tire=getTireAtLap(lp.num,currentLap);
+    const tireCol=tire?TIRE_COLORS[tire]:null;
 
     ctx.save();
     const bw=32,bh=14,br=4;
@@ -628,26 +764,38 @@ function drawTrackFrame(ctx,canvas,pts,positions,lapProgress){
     ctx.shadowBlur=0;
     ctx.font='bold 8px DM Sans,sans-serif';ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(drv.a,x,y);
+
+    // Tire indicator dot
+    if(tireCol){
+      ctx.fillStyle=tireCol;
+      ctx.beginPath();ctx.arc(x+bw/2-2,y-bh/2-2,3,0,Math.PI*2);ctx.fill();
+    }
     ctx.restore();
   });
 }
 
-function renderLeaderboard(positions){
+function renderLeaderboard(positions,currentLap){
+  const isDNF=num=>replayData&&replayData.dnfDrivers&&replayData.dnfDrivers.has(num);
+
   document.getElementById('leaderboard').innerHTML=positions.map(lp=>{
     const d=driverByNum(lp.num);
-    if(!d){
-      // Driver not in our list - show number only
-      return `<div class="lb-row">
-        <div class="lb-pos">${lp.pos}</div>
-        <div class="lb-color" style="background:#666"></div>
-        <div class="lb-info"><div class="lb-name">#${lp.num}</div><div class="lb-team">-</div></div>
-      </div>`;
-    }
+    if(!d) return `<div class="lb-row">
+      <div class="lb-pos">${lp.pos}</div>
+      <div class="lb-color" style="background:#666"></div>
+      <div class="lb-info"><div class="lb-name">#${lp.num}</div><div class="lb-team">-</div></div>
+    </div>`;
+
     const pc=lp.pos<=3?` p${lp.pos}`:'';
-    return `<div class="lb-row">
+    const tire=getTireAtLap(lp.num,currentLap||1);
+    const dnf=isDNF(lp.num);
+    const tireHTML=tire?`<div class="tire ${tire}" title="${tire}"></div>`:'';
+    const dnfHTML=dnf?`<span class="dnf-tag">DNF</span>`:'';
+
+    return `<div class="lb-row"${dnf?' style="opacity:0.4"':''}>
       <div class="lb-pos${pc}">${lp.pos}</div>
       <div class="lb-color" style="background:${TC[d.t]||'#666'}"></div>
       <div class="lb-info"><div class="lb-name">${d.a} ${d.name}</div><div class="lb-team">${d.t}</div></div>
+      ${dnfHTML}${tireHTML}
     </div>`;
   }).join('');
 }
